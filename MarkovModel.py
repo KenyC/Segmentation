@@ -6,12 +6,13 @@ class HMM:
 	# a: k list of letter value: maps index i to letter with index i
 	# aR: dictionary (size k) mapping letters to indices.
 	# k: size of the alphabet
-	# t: transition matrix (n*n)->0,1 
+
+	# t: transition matrix (n*k*n)->0,1 
 	# i: initial state distribution n->0,1 (probability that i is initial state)
 	# e: end state distribution n->0,1 (probability that i is output state)
-	# o: output distribution (n*k)->0,1 (probability that state i outputs letter j)
 	# n: number of states
-	def __init__(self,alphabet,init,end,output,trans):
+
+	def __init__(self,alphabet,init,end,trans):
 		self.a=alphabet
 		self.k=len(self.a)
 		self.aR=dict()
@@ -21,13 +22,14 @@ class HMM:
 		self.t=trans
 		self.i=init
 		self.e=end
-		self.o=output
 		
 		self.n=len(self.i)
 		
 		# Auxiliary variable used for picking transition
-		self.arr=[i for i in range(self.n)]
-		self.arr.append(-1)
+		self.pickTransition = [(state,letter) for letter in range(self.k) for state in range(self.n)]
+		self.pickTransition.append((-1,0))
+
+
 	def gen(self,n=-1,path=False):
 		if n<0:
 			return self.gen_aux(path)
@@ -50,16 +52,17 @@ class HMM:
 			path.append(stateCur)
 			
 			# Creating outcomes for transition drawing (either another state or end here)
-			drawProba=self.t[stateCur]
+			drawProba=self.t[stateCur].flatten()
 			drawProba=np.append(drawProba,self.e[stateCur])
 			
 			# Drawing transition at random
-			output=np.random.choice(self.arr,p=drawProba)
-			# Drawing letter at random
-			letter=np.random.choice(self.a,p=self.o[stateCur])
+			idxChoice = np.random.choice(len(self.pickTransition),p=drawProba)
+			output,letter = self.pickTransition[idxChoice]
+			letter = self.a[letter]
 			
 			# Append new letter
-			word+=letter
+			if output!=-1:
+				word+=letter
 		
 		if a_path:
 			return (path,word)
@@ -67,6 +70,9 @@ class HMM:
 			return word
 	
 	# Returns one of the most likely paths that produce the word.
+	# - word: the word
+	# - probOnly: if True, does not return path
+	# - log: if True, returns log-proba
 	def viterbi(self,word,probOnly=False,log=False):
 		probaL,pathL=self.viterbi_aux(list(word))
 		iMax=np.argmax(probaL*self.e)
@@ -84,27 +90,35 @@ class HMM:
 				return np.log(probaFin),pathL[iMax]
 		
 	# Returns for all i, one of the most likely paths that produce the sequence of characters "seq" that ends in state i.
+	# - seq: a list of characters that compose the word
 	def viterbi_aux(self,seq):
-		l=len(seq)
-		path=[[[] for i in range(self.n)] for j in range(l)]
-		proba=np.full((l,self.n),1.0,dtype='float')
+		l = len(seq)
+
+		path = [[[] for i in range(self.n)] for j in range(l+1)]
+		proba=np.full((l+1,self.n),1.0,dtype='float')
 		
 		for i in range(self.n):
 			path[0][i].append(i)
-			proba[0][i]=self.i[i]*self.o[i][self.aR[seq[0]]]
+			proba[0][i]=self.i[i]#*self.o[i][self.aR[seq[0]]]
 		
-		for j in range(1,l):
+		for j in range(1,l+1):
 			for i in range(self.n):
-				max=0.0
+
+				maxProba=0.0
 				pmax=[]
+				
 				for k in range(self.n):
-					p=proba[j-1][k]*self.t[k][i]*self.o[i][self.aR[seq[j]]]
-					if p>=max:
-						max=p
+					
+					p=proba[j-1][k]*self.t[k][self.aR[seq[j-1]]][i]
+					
+					if p>=maxProba:
+						maxProba=p
 						pmax=path[j-1][k]+[i]
-				proba[j][i]=max
+				
+				proba[j][i]=maxProba
 				path[j][i]=pmax
-		return (proba[l-1],path[l-1])
+		
+		return (proba[l],path[l])
 	
 	# Returns the log-likelihood that the given corpus "obs" is generated
 	def logL(self, obs):
@@ -132,18 +146,20 @@ class HMM:
 
 	# Returns the array of probability that a given word is generated and and the chain ends at i
 	# Dynamic programming: compute the probability that every prefix of the word is generated and ends at state i
+	# - seq: the sequence of characters that constitute the word
 	def proba_aux(self,seq):
 		l=len(seq)
-		proba=np.full((l,self.n),1.0,dtype='float')
-		o1=np.swapaxes(self.o,0,1)
-		t1=np.swapaxes(self.t,0,1)
+		proba=np.full((l+1,self.n),1.0,dtype='float')
+		# Put the array in the form (letter, output_state, input_state)
+		t1=np.transpose(self.t,(1,2,0))
 		
-		proba[0]=self.i*o1[self.aR[seq[0]]]
+		proba[0]=self.i
 		
-		for t in range(1,l):
-			proba[t]=(t1.dot(proba[t-1]))*o1[self.aR[seq[t]]]
+		for t in range(1,l+1):
+			letter = seq[t-1]
+			proba[t]=(t1[self.aR[letter]].dot(proba[t-1]))
 				
-		return proba[l-1]
+		return proba[l]
 	
 	# Compute the result of the Baum-Welch algorithm until a desired level of convergence is reached ; the algorithm will try to achieve the desired level of convergence in a prespecified number of steps
 	# obs: corpus, observed data
@@ -167,47 +183,45 @@ class HMM:
 	# obs: corpus, observed data
 	def baumwelch_aux(self,obs):
 		
-		# Expected number of transition out of state i
-		expSt=np.full(self.n,0.0,dtype='float')
-		# Expected number of transition from i to j
-		expTr=np.full((self.n,self.n),0.0,dtype='float')
+		# Expected number of transition from i to j with letter l
+		expTr=np.full((self.k, self.n, self.n),0.0,dtype='float')
 		# Expected number of starts in i
 		expInit=np.full(self.n,0.0,dtype='float')
 		# Expected number of endings in i
 		expEnd=np.full(self.n,0.0,dtype='float')
-		# Expected number of outputting letter a in i
-		expOutput=np.full((self.k,self.n),0.0,dtype='float')
 		# Difference in log-likelihood of generating corpus before and after algorithm
 		dLL=0.0
 		
 		# Transition variable
-		t1=np.swapaxes(self.t,0,1)
-		o1=np.swapaxes(self.o,0,1)
+		t1=np.transpose(self.t,(1,2,0))
+		t2=np.transpose(self.t,(1,0,2))
 		
 		for sComp in obs:
+			#Convert input sequence into list of indices
 			s=list(sComp)
 			nC=[self.aR[c] for c in s]
+
 			l=len(s)
 			# print(nC)
 			
 			
 			
 			# Forward procedure: compute the probability of observing the prefix up until t and end in state i
-			forward=np.full((l,self.n),0.0,dtype='float')
-			forward[0]=self.i*o1[nC[0]]
-			for t in range(l-1):
-				forward[t+1]=(t1.dot(forward[t]))*o1[nC[t+1]]
+			forward = np.full((l+1,self.n),0.0,dtype='float')
+			forward[0] = self.i
+			for t in range(l):
+				forward[t+1]=t1[nC[t]].dot(forward[t])
 			# print("Forward:",forward)
 			
 			# Backward procedure: compute the probability of ending with suffix from t on and start with state i
-			backward=np.full((l,self.n),1.0,dtype='float')
-			backward[l-1]=self.e
-			for t in range(l-1,0,-1):
-				backward[t-1]=self.t.dot(backward[t]*o1[nC[t]])
+			backward=np.full((l+1,self.n),1.0,dtype='float')
+			backward[l]=self.e
+			for t in range(l,0,-1):
+				backward[t-1]=t2[nC[t-1]].dot(backward[t])
 			# print("Backward:",backward)
 			
 			# Computing probability of outputting s
-			proba=np.sum(forward[l-1]*backward[l-1])
+			proba=np.sum(forward[l]*backward[l])
 			# Updating log likelihood
 			dLL-=np.log(proba)
 			
@@ -219,72 +233,80 @@ class HMM:
 			
 			# Computing probability of transitioning from i to j at time t given the string s
 			# This is equal to the probability of outputting the string s while transitioning from i to j divded by the probability of outputting s (P(A/B)=P(A and B)/P(B))
-			zeta=np.full((l-1,self.n,self.n),1.0,dtype='float')
-			f=forward[0:l-1]
-			b=backward[1:l]
-			for t in range(l-1):
-				aux=f[t]*np.transpose(zeta[t])
-				zeta[t]=self.t*o1[nC[t+1]]*b[t]*np.transpose(aux)
+			zeta=np.full((l,self.n,self.n),1.0,dtype='float')
+			
+			f = np.tile(forward[0:l],(self.n,1,1))
+			f = np.transpose(f,(1,2,0))
+
+			b = np.tile(backward[1:l+1],(self.n,1,1))
+			b = np.transpose(b,(1,0,2))
+
+			for t in range(l):
+				zeta[t]=t2[nC[t]]*b[t]*f[t]
+			
 			zeta=(1/proba)*zeta
 			
 			# Update estimates
-			expEnd+=gamma[l-1]
+			expEnd+=gamma[l]
 			expInit+=gamma[0]
-			expTr+=np.sum(zeta,axis=0)
 			for t in range(l):
-				expOutput[nC[t]]+=gamma[t]
+				expTr[nC[t]]+=zeta[t]
+
 		# Updating values
 		self.i=expInit/np.sum(expInit)
 		self.e=expEnd
-		self.t=expTr
-		self.o=np.transpose(expOutput)
+		self.t=np.transpose(expTr,(1,0,2))
+		
 
 		
 		# Normalizing the result
-		normTr=self.e+np.sum(self.t,axis=1)
-		normOut=np.sum(self.o,axis=1)
+		normTr=self.e+np.sum(self.t,axis=(1,2))
 		self.e/=normTr
 		for i in range(self.n):
 			self.t[i]/=normTr[i]
-			self.o[i]/=normOut[i]
 		
 		# Compute new likelihood and use it to compute the difference in likelihood
 		dLL+=self.logL(obs)
 		return dLL
 	
 	# Display important parameter of the HMM, optionally (depending on "round") rounding them to "nD" decimals after the decimal point
-	def aff(self,round=True,nD=3):
-		if round:
-			print("Init:",np.round(self.i,nD))
-			print("End:",np.round(self.e,nD))
-			print("Output:",np.round(self.o,nD))
-			print("Transition:",np.round(self.t,nD))
-		else:
-			print("Init:",self.i)
-			print("End:",self.e)
-			print("Output:",self.o)
-			print("Transition:",self.t)
+	def aff(self,nD=3):
+
+		print("Init:")
+		for i in range(self.n):
+			print("\tState {} : {}".format(i,np.round(self.i[i],nD)))
+
+		print()
+		print("Transition/End:")
+		for inS in range(self.n):
+			print()
+			print("\t{} -- -->#:  {}".format(inS,np.round(self.e[i],nD)))
+			for outS in range(self.n):
+				for letter in range(self.k):
+					print("\t{} --{}-->{}:  {}".format(inS,self.a[letter],outS,np.round(self.t[inS][letter][outS],nD)))
+
+
+
 	# Returns the number of degrees of freedom in the model
 	def dims(self):
 		return self.n*(self.n+self.k)-1
 	
 	def randHMM(alphabet,n):
 		k=len(alphabet)
+
 		init=np.random.sample(n)
 		init/=np.sum(init)
-		output=np.random.sample((n,k))
-		output/=np.sum(output)
 		
-		inter=np.random.sample((n,n+1))
-		trans=np.full((n,n),0.0,dtype='float')
+		inter=np.random.sample((n,n*k+1))
+		trans=np.full((n,k,n),0.0,dtype='float')
 		end=np.full(n,0.0,dtype='float')
+		
 		for i in range(n):
-			output[i]/=np.sum(output[i])
 			inter[i]/=np.sum(inter[i])
-			trans[i]=inter[i][:-1]
+			trans[i]=inter[i][:-1].reshape(k,n)
 			end[i]=inter[i][-1]
 		
-		return HMM(alphabet,init,end,output,trans)
+		return HMM(alphabet,init,end,trans)
 	
 	 
 	# Returns a flattened array that contains all the parameters of the HMM
@@ -294,7 +316,18 @@ class HMM:
 		flat=np.append(flat,self.e)
 		flat=np.append(flat,self.t.flatten())
 		return flat
-		
+	
+	# Normalizes the parameters of the HMM
+	def normalize(self):
+		self.i/=np.sum(self.i)
+
+		print(self.t.shape)
+		print(self.e.shape)
+		for i in range(self.n):
+			norm = np.sum(self.t[i])+self.e[i]
+			self.e[i] /= norm
+			self.t[i] /= norm
+
 	# Returns a sequence of the parameter vectors of the HMM.
 	# The parameter vectors are vectors whose coordinates sum up to 1 that together completely specify the model.
 	# The parameter vectors are returned in the following arbitrary (but convenient) way:
@@ -323,6 +356,81 @@ class HMM:
 	def dist(hm1,hm2):
 		return np.linalg.norm(hm1.flat()-hm2.flat())
 	
+##############FOR TESTING##################################
+			
+alphabet = ['a','b']
+sizeAlph = len(alphabet)
+
+# HMM 1
+# - generates alternations of large 'a' sequences and smaller 'a' sequences separated by single b's
+def HMM1():
 	
-			
-			
+	nStates = 2
+
+	init = np.full(nStates,0.0)
+	init[0]=1.0
+
+	trans = np.full((nStates,sizeAlph,nStates),0.0)
+	end = np.full(nStates,0.0)
+
+	# From initial state
+	trans[0][0][0]=0.9
+	trans[0][1][1]=0.05
+	end[0]=0.05
+
+	# From other state
+	trans[1][0][1]=0.6
+	trans[1][1][0]=0.35
+	end[1]=0.05
+
+	return HMM(alphabet,init,end,trans)
+
+# HMM 2
+# - just like the above with the added complication that initial state is random
+# - and the first state may sometimes output b's and stay in the same state
+def HMM2():
+	
+	nStates = 2
+
+	init = np.full(nStates,0.5)
+	
+
+	trans = np.full((nStates,sizeAlph,nStates),0.0)
+	end = np.full(nStates,0.0)
+
+	# From initial state
+	trans[0][0][0]=0.8
+	trans[0][1][0]=0.1
+	trans[0][1][1]=0.05
+	end[0]=0.05
+
+	# From other state
+	trans[1][0][1]=0.6
+	trans[1][1][0]=0.35
+	end[1]=0.05
+
+	return HMM(alphabet,init,end,trans)
+
+# HMM 3
+# - produces a bunch of a followed by a bunch of b
+def HMM3():
+	
+	nStates = 2
+
+	init = np.full(nStates,0.1)
+	init[0]=0.9
+	
+
+	trans = np.full((nStates,sizeAlph,nStates),0.0)
+	end = np.full(nStates,0.0)
+
+	# From initial state
+	trans[0][0][0]=0.9
+	trans[0][1][1]=0.05
+	end[0]=0.05
+
+	# From other state
+	trans[1][1][1]=0.7
+	end[1]=0.3
+
+	return HMM(alphabet,init,end,trans)
