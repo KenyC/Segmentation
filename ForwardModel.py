@@ -1,3 +1,4 @@
+from genModel import SegmentGM
 from MarkovModel import HMM
 import numpy as np
 
@@ -12,6 +13,8 @@ import numpy as np
 # U -> terminal symbols
 
 class ForwardHMM(HMM):
+	
+
 
 	# This constructor is like the HMM, but it erases forbidden transitions
 	def __init__(self,alphabet,m_end,trans):
@@ -36,8 +39,6 @@ class ForwardHMM(HMM):
 
 	def randHMM(alphabet, n):
 		aux = HMM.randHMM(alphabet, n)
-		print(aux.e)
-		print(aux.t)
 		return ForwardHMM(alphabet, aux.e, aux.t)
 
 	# Segments a word

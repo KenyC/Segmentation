@@ -16,6 +16,11 @@ class SegmentGM:
 		self.proba = np.array([p for s,p in self.freqTable])
 		self.stop = m_stop
 
+	def alphabet(self):
+		return list(set().union(*tuple(set(w) for w in self.segments)))
+
+
+
 	def gen(self,n=-1):
 		if n<0:
 			word = ""

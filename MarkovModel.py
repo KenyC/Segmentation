@@ -1,5 +1,5 @@
 import numpy as np
-import scipy.stats as st
+import scipy.stats as st, logistic
 from math import log,exp
 
 class HMM:
@@ -160,7 +160,8 @@ class HMM:
 			proba[t]=(t1[self.aR[letter]].dot(proba[t-1]))
 				
 		return proba[l]
-	
+
+
 	# Compute the result of the Baum-Welch algorithm until a desired level of convergence is reached ; the algorithm will try to achieve the desired level of convergence in a prespecified number of steps
 	# obs: corpus, observed data
 	# convLevel: algorithm stops when difference in log-likelihood obatained after performing one step is below convLevel
@@ -280,7 +281,7 @@ class HMM:
 		print("Transition/End:")
 		for inS in range(self.n):
 			print()
-			print("\t{} -- -->#:  {}".format(inS,np.round(self.e[i],nD)))
+			print("\t{} -- -->#:  {}".format(inS,np.round(self.e[inS],nD)))
 			for outS in range(self.n):
 				for letter in range(self.k):
 					print("\t{} --{}-->{}:  {}".format(inS,self.a[letter],outS,np.round(self.t[inS][letter][outS],nD)))
@@ -355,6 +356,22 @@ class HMM:
 	# Returns the Euclidian distance between all the parameters of "hm1" and "hm2"
 	def dist(hm1,hm2):
 		return np.linalg.norm(hm1.flat()-hm2.flat())
+
+	def jitter(self,epsilon = 1000, clamp=0.001):
+		for i in range(self.n):
+			flatTr = np.append(self.t[i].flatten(),self.e[i])
+			for j in range(self.n*self.k+1):
+				if flatTr[j]<clamp:
+					flatTr[j] = clamp
+				elif flatTr[j]>1-clamp:
+					flatTr[j] = 1-clamp
+			flatTr*=epsilon
+			newValues = np.random.dirichlet(flatTr)
+			self.e[i]=newValues[-1]
+			self.t[i]=newValues[:-1].reshape(self.k,self.n)
+			# for chaining
+			return self
+
 	
 ##############FOR TESTING##################################
 			
@@ -434,3 +451,84 @@ def HMM3():
 	end[1]=0.3
 
 	return HMM(alphabet,init,end,trans)
+
+def getAlph(corpus):
+	return list(set().union(*tuple(set(w) for w in corpus)))
+#
+def compBaumWelch(corpus,n,tParams={'convLevel':0.001,
+	'maxSteps': 10000,
+	'epsilonJitter': 1000,
+	'clampJitter': 0.001,
+	'pLogistic': 3.0,
+	'overflow': 10.0
+	'rateOverflow': 0.1}):
+	alphabet = getAlph(corpus)
+
+	# Two competitor HMMs
+	H1 = randHMM(corpus,n)
+	H2 = randHMM(corpus,n)
+
+	H1.name = "H1"
+	H2.name = "H2"
+
+	
+
+	# the first competitor is the one that is being trained
+	current = H1,H2
+
+	# Initial log-likelihoods
+	ll = H1.logL(corpus), H2.logL(corpus)
+
+	# difference in log-likelihood for current step ; initial value: anything that is above the threshold
+	dLL=convLevel+1.0
+
+	# loop index
+	i=0
+	
+	overP = tParams['overflow']
+	while i<maxSteps and dLL>=convLevel:
+
+		dLL=current[0].baumwelch_aux(obs)
+		ll[0] = current[0].logL(corpus)
+		ll[1] = current[1].jitter(epsilon = tParams['epsilonJitter'],clamp = tParams['clampJitter']).logL(corpus)
+
+		overP = (1-tParams['overflowRate']) * overP + tParams['overflowRate']
+
+		probaSwitch = logistic.cdf((ll[1]-ll[0])/tParams['pLogistic'])
+		probaSwitch *= overP
+		probaSwitch = 1 if probaSwitch > 1 else probaSwitch
+
+		if np.random.binomial(1,probaSwitch):
+			current = current[1],current[0]
+			ll = ll[1], ll[0]
+			overP = tParams['overflow']
+
+		if i%50==0:
+			print("step n°{} complete (n states={}): DLL={}, current={}".format(i,self.n,dLL,current[0].name))
+		i+=1
+	
+	
+
+	#return {'bestHMM': ,'num_steps': i, 'finalLL': }
+
+
+
+
+def indBaumWelch(corpus,n,convLevel=0.001,maxSteps=10000):
+	alphabet = getAlph(corpus)
+	H1 = randHMM(corpus,n)
+	H2 = randHMM(corpus,n)
+
+	# difference in log-likelihood for current step ; initial value: anything that is above the threshold
+	dLL=convLevel+1.0
+	# loop index
+	i=0
+	
+	while i<maxSteps and dLL>=convLevel:
+		dLL=H1.baumwelch_aux(obs)
+		if i%50==0:
+			print("step n°%i complete (n states=%i): DLL=%f"%(i,n,dLL))
+		i+=1
+	
+	return i
+
