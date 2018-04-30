@@ -1,7 +1,7 @@
 from ForwardModel import ForwardHMM
 from string import ascii_lowercase
 
-filePath = "data/word_alpha.txt"
+filePath = "data/words_alpha.txt"
 alphabet = list(ascii_lowercase)
 
 corpus = []
@@ -12,6 +12,7 @@ with open(filePath,'r') as f:
 n = 5
 fm = ForwardHMM.randHMM(alphabet, n)
 
-fm.baumwelch(corpus)
+print("#Starting BW#")
+fm.baumwelch(corpus, display = 3)
 print(fm.gen(10))
         

@@ -1,6 +1,6 @@
 import numpy as np
-import scipy.stats as st, logistic
-from math import log,exp
+# import scipy.stats as st
+# from math import log,exp
 
 class HMM:
 	# a: k list of letter value: maps index i to letter with index i
@@ -166,7 +166,7 @@ class HMM:
 	# obs: corpus, observed data
 	# convLevel: algorithm stops when difference in log-likelihood obatained after performing one step is below convLevel
 	# maxSteps: maximum number of steps to reach desried level of convergence
-	def baumwelch(self,obs,convLevel=0.001,maxSteps=10000):
+	def baumwelch(self,obs,convLevel=0.001,maxSteps=10000,display = 50):
 		# difference in log-likelihood for current step ; initial value: anything that is above the threshold
 		dLL=convLevel+1.0
 		# loop index
@@ -174,7 +174,7 @@ class HMM:
 		
 		while i<maxSteps and dLL>=convLevel:
 			dLL=self.baumwelch_aux(obs)
-			if i%50==0:
+			if i%display==0:
 				print("step n°%i complete (n states=%i): DLL=%f"%(i,self.n,dLL))
 			i+=1
 		
@@ -455,80 +455,80 @@ def HMM3():
 def getAlph(corpus):
 	return list(set().union(*tuple(set(w) for w in corpus)))
 #
-def compBaumWelch(corpus,n,tParams={'convLevel':0.001,
-	'maxSteps': 10000,
-	'epsilonJitter': 1000,
-	'clampJitter': 0.001,
-	'pLogistic': 3.0,
-	'overflow': 10.0
-	'rateOverflow': 0.1}):
-	alphabet = getAlph(corpus)
+# def compBaumWelch(corpus,n,tParams={'convLevel':0.001,
+# 	'maxSteps': 10000,
+# 	'epsilonJitter': 1000,
+# 	'clampJitter': 0.001,
+# 	'pLogistic': 3.0,
+# 	'overflow': 10.0,
+# 	'rateOverflow': 0.1}):
+# 	alphabet = getAlph(corpus)
 
-	# Two competitor HMMs
-	H1 = randHMM(corpus,n)
-	H2 = randHMM(corpus,n)
+# 	# Two competitor HMMs
+# 	H1 = randHMM(corpus,n)
+# 	H2 = randHMM(corpus,n)
 
-	H1.name = "H1"
-	H2.name = "H2"
+# 	H1.name = "H1"
+# 	H2.name = "H2"
 
 	
 
-	# the first competitor is the one that is being trained
-	current = H1,H2
+# 	# the first competitor is the one that is being trained
+# 	current = H1,H2
 
-	# Initial log-likelihoods
-	ll = H1.logL(corpus), H2.logL(corpus)
+# 	# Initial log-likelihoods
+# 	ll = H1.logL(corpus), H2.logL(corpus)
 
-	# difference in log-likelihood for current step ; initial value: anything that is above the threshold
-	dLL=convLevel+1.0
+# 	# difference in log-likelihood for current step ; initial value: anything that is above the threshold
+# 	dLL=convLevel+1.0
 
-	# loop index
-	i=0
+# 	# loop index
+# 	i=0
 	
-	overP = tParams['overflow']
-	while i<maxSteps and dLL>=convLevel:
+# 	overP = tParams['overflow']
+# 	while i<maxSteps and dLL>=convLevel:
 
-		dLL=current[0].baumwelch_aux(obs)
-		ll[0] = current[0].logL(corpus)
-		ll[1] = current[1].jitter(epsilon = tParams['epsilonJitter'],clamp = tParams['clampJitter']).logL(corpus)
+# 		dLL=current[0].baumwelch_aux(obs)
+# 		ll[0] = current[0].logL(corpus)
+# 		ll[1] = current[1].jitter(epsilon = tParams['epsilonJitter'],clamp = tParams['clampJitter']).logL(corpus)
 
-		overP = (1-tParams['overflowRate']) * overP + tParams['overflowRate']
+# 		overP = (1-tParams['overflowRate']) * overP + tParams['overflowRate']
 
-		probaSwitch = logistic.cdf((ll[1]-ll[0])/tParams['pLogistic'])
-		probaSwitch *= overP
-		probaSwitch = 1 if probaSwitch > 1 else probaSwitch
+# 		probaSwitch = logistic.cdf((ll[1]-ll[0])/tParams['pLogistic'])
+# 		probaSwitch *= overP
+# 		probaSwitch = 1 if probaSwitch > 1 else probaSwitch
 
-		if np.random.binomial(1,probaSwitch):
-			current = current[1],current[0]
-			ll = ll[1], ll[0]
-			overP = tParams['overflow']
+# 		if np.random.binomial(1,probaSwitch):
+# 			current = current[1],current[0]
+# 			ll = ll[1], ll[0]
+# 			overP = tParams['overflow']
 
-		if i%50==0:
-			print("step n°{} complete (n states={}): DLL={}, current={}".format(i,self.n,dLL,current[0].name))
-		i+=1
+# 		if i%50==0:
+# 			print("step n°{} complete (n states={}): DLL={}, current={}".format(i,self.n,dLL,current[0].name))
+# 		i+=1
 	
 	
 
-	#return {'bestHMM': ,'num_steps': i, 'finalLL': }
+# 	#return {'bestHMM': ,'num_steps': i, 'finalLL': }
 
 
 
 
-def indBaumWelch(corpus,n,convLevel=0.001,maxSteps=10000):
-	alphabet = getAlph(corpus)
-	H1 = randHMM(corpus,n)
-	H2 = randHMM(corpus,n)
+# def indBaumWelch(corpus,n,convLevel=0.001,maxSteps=10000):
+# 	alphabet = getAlph(corpus)
+# 	H1 = randHMM(corpus,n)
+# 	H2 = randHMM(corpus,n)
 
-	# difference in log-likelihood for current step ; initial value: anything that is above the threshold
-	dLL=convLevel+1.0
-	# loop index
-	i=0
+# 	# difference in log-likelihood for current step ; initial value: anything that is above the threshold
+# 	dLL=convLevel+1.0
+# 	# loop index
+# 	i=0
 	
-	while i<maxSteps and dLL>=convLevel:
-		dLL=H1.baumwelch_aux(obs)
-		if i%50==0:
-			print("step n°%i complete (n states=%i): DLL=%f"%(i,n,dLL))
-		i+=1
+# 	while i<maxSteps and dLL>=convLevel:
+# 		dLL=H1.baumwelch_aux(obs)
+# 		if i%50==0:
+# 			print("step n°%i complete (n states=%i): DLL=%f"%(i,n,dLL))
+# 		i+=1
 	
-	return i
+# 	return i
 
